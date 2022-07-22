@@ -6,14 +6,13 @@ Simple inference implementation with trained HRNet on MIT ADE20K dataset, using 
 git clone https://github.com/DENGRENHAO/semantic-segmentation.git
 ```
 ```
+cd .\semantic-segmentation\
+```
+```
 pip install -r requirements.txt
 ```
 
 ## Usage
-查看可用的選項：
-```
-python main.py --help
-```
 ### 範例
 ```
 python semantic_segmentation.py -i ./input_img_folder/ -o ./output_img_folder/
