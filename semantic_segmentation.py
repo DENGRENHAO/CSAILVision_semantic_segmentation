@@ -4,7 +4,6 @@ This code is to run simple version of inference model of SOTA semantic segmentat
 
 import os
 import numpy as np
-import pdb
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -13,11 +12,23 @@ import csv
 from PIL import Image
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
+import urllib.request
+import argparse
+import pandas as pd
 # MIT libraries
 from mit_semseg.models import ModelBuilder, SegmentationModule
 from mit_semseg.utils import colorEncode
 from mit_semseg.lib.utils import as_numpy
 from mit_semseg.lib.nn import async_copy_to
+
+def parse_argument():
+    parser = argparse.ArgumentParser(description='Get GVI, SVF, BVF scores by Semantic Segmentation')
+    parser.add_argument('-i', '--input', type=str, required=True,
+                        help='Input images directory')
+    parser.add_argument('-o', '--output', type=str, required=True,
+                        help='Output images directory')
+
+    return parser.parse_args()
 
 def build_encoder(arch_encoder,fc_dim,weights):
 	# Network Builders
@@ -47,7 +58,7 @@ def imresize(im, size, interp='bilinear'):
     if interp == 'nearest':
         resample = Image.NEAREST
     elif interp == 'bilinear':
-        resample = Image.BILINEAR
+        resample = Image.Resampling.BILINEAR
     elif interp == 'bicubic':
         resample = Image.BICUBIC
     else:
@@ -116,12 +127,31 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
     pred = np.int32(pred)
     pixs = pred.size
     uniques, counts = np.unique(pred, return_counts=True)
+    gvi = 0
+    svf = 0
+    bvf = 0
     print("Prediction info is:")
     for idx in np.argsort(counts)[::-1]:
         name = names[uniques[idx] + 1]
         ratio = counts[idx] / pixs * 100
         if ratio > 0.1:
             print("  {}: {:.2f}%".format(name, ratio))
+        if name=='grass' or name=='tree' or name=='field' or name=='flower' or name=='plant':
+            gvi += ratio
+        elif name=='sky':
+            svf += ratio
+        elif name=='building' or name=='house':
+            bvf += ratio
+    print(f"GVI: {format(gvi, '.2f')}%")
+    print(f"SVF: {format(svf, '.2f')}%")
+    print(f"BVF: {format(bvf, '.2f')}%")
+    data = {'GVI': gvi, 'SVF': svf, 'BVF': bvf}
+    df = pd.DataFrame({"key": data.keys(), "value": data.values()})
+    img_name = image_name.split(".")
+    path = os.path.join(os.getcwd(), os.path.join(output_path, 'scores'))
+    if not os.path.exists(path):
+        os.makedirs(path)
+    df.to_csv(os.path.join(path, 'scores_of_' + img_name[0] + '.csv'), index=False)
 
     # colorize prediction
     pred_color = colorEncode(pred, colors).astype(np.uint8)
@@ -136,21 +166,6 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
     plt.imsave(output_path+image_name[:-4]+'.png',im_vis)
 
     return
-
-def scene_filter(image_path,output_path,image_name,prob,scene_index,W_global,H_global):
-    prob_threshold = 0.99
-    img_ori = cv2.imread(image_path+image_name)
-    img_ori = cv2.cvtColor(img_ori, cv2.COLOR_BGR2RGB)
-    if img_ori.shape[0] > 2048 or img_ori.shape[1] > 2048:
-        img_ori = cv2.resize(img_ori,(2048,2048))
-    mask = np.zeros((img_ori.shape[0],img_ori.shape[1]))
-    mask[prob[scene_index] > prob_threshold] = 1
-    mask.astype('uint8')
-
-    # resize to global if necessary:
-    if img_ori.shape[0] != H_global and img_ori.shape[1] != W_global:
-        img_ori = cv2.resize(img_ori,(W_global,H_global))
-        mask = cv2.resize(mask,(W_global,H_global))
 
     # masking:
     img_ori[mask == 1] = np.array([0,10,255],dtype='uint8') # (R,G,B) = sky blue
@@ -171,9 +186,25 @@ imgSizes = (300, 375, 450, 525, 600) # multi-scale prediction
 padding_constant = 32
 imgMaxSize = 1000
 
-# input image:
-image_path = './data/ADE20K/release_test/'
-output_path = './data/ADE20K/release_test_semantic/'
+weights_folder = './ade20k-hrnetv2-c1/'
+if not os.path.exists(weights_folder):
+    os.makedirs(weights_folder)
+if not os.path.isfile(encoder_weights_path):
+    print('Downloading encoder weights......')
+    urllib.request.urlretrieve("http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-hrnetv2-c1/encoder_epoch_30.pth",
+                               weights_folder + "encoder_epoch_30.pth")
+if not os.path.isfile(decoder_weights_path):
+    print('Downloading decoder weights......')
+    urllib.request.urlretrieve("http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-hrnetv2-c1/decoder_epoch_30.pth",
+                               weights_folder + "decoder_epoch_30.pth")
+
+image_path = ''
+output_path = ''
+args = parse_argument()
+if args.input:
+    image_path = args.input
+if args.output:
+    output_path = args.output
 
 # read color table:
 colors = loadmat('./data/color150.mat')['colors']
@@ -240,8 +271,3 @@ for image_name in os.listdir(image_path):
     # return original sized prediction discretized class map
     visualize_result(image_path,output_path,image_name,pred,names,colors,W_global,H_global)
 
-    # sky filtering:
-    print("Scene filtering with thresholding......")
-    scene_index = 2 # sky index = 2
-    prob = as_numpy(scores.squeeze(0).cpu())
-    scene_filter(image_path,output_path,image_name,prob,scene_index,W_global,H_global)
