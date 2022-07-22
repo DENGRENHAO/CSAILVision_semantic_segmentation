@@ -1,5 +1,5 @@
 # Semantic Segmentation
-Simple inference implementation with trained HRNet on MIT ADE20K dataset, using PyTorch 1.6.0. Most of the code taken from [1].
+Getting GVI, SVF, BFV scores from semantic segmentation. Using pretrained HRNet on MIT ADE20K dataset, most of the code taken from [CSAILVision](https://github.com/CSAILVision/semantic-segmentation-pytorch) and simple inference implementation from [liuch37](https://github.com/liuch37/semantic-segmentation).
 
 ## Prerequisite
 ```
@@ -25,7 +25,3 @@ python semantic_segmentation.py -i ./input_img_folder/ -o ./output_img_folder/
 
 ![Image of semantic map](https://github.com/liuch37/semantic-segmentation/blob/master/misc/ADE_test_00000272.png)
 
-## Source
-[1] Original code: https://github.com/CSAILVision/semantic-segmentation-pytorch.
-
-[2] HRNet: https://arxiv.org/abs/1904.04514.
