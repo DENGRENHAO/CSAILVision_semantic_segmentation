@@ -1,32 +1,30 @@
 # Semantic Segmentation
-Simple inference implementation with trained HRNet on MIT ADE20K dataset, using PyTorch 1.6.0. Most of the code taken from [1]. Purpose of this project is to unify sky pixels with ultra high prediction confidence to a single color, in order to remove sun light effect and inconsistent cloud texture.
+Simple inference implementation with trained HRNet on MIT ADE20K dataset, using PyTorch 1.6.0. Most of the code taken from [1].
+
+## Prerequisite
+```
+git clone https://github.com/DENGRENHAO/semantic-segmentation.git
+```
+```
+pip install -r requirements.txt
+```
 
 ## Usage
-1. Download pretrained model from http://sceneparsing.csail.mit.edu/model/pytorch and store them in ```./ade20k-hrnetv2-c1/```.
-
-2. Specify your test input image directory and test output image directory in ```semantic_segmentation.py```.
+查看可用的選項：
 ```
-   image_path = './input/'
-
-   output_path = './output/'
+python main.py --help
 ```
-3. Specify if you want to use GPU or not (-1 for cpu, others for gpu index) in ```semantic_segmentation.py```.
+### 範例
 ```
-   gpu = -1
+python semantic_segmentation.py -i ./input_img_folder/ -o ./output_img_folder/
 ```
-4. Run ```python semantic_segmentation.py```
-
-5. All the inference results will be stored in your output_path
+- 在 `./input_img_folder/`資料夾中的圖片皆會經過Semantic Segmentation，最後輸出結果至`./output_img_folder/`資料夾中
 
 ## Results
 
 ### semantic map
 
 ![Image of semantic map](https://github.com/liuch37/semantic-segmentation/blob/master/misc/ADE_test_00000272.png)
-
-### sky filtered image
-
-![Image of semantic map](https://github.com/liuch37/semantic-segmentation/blob/master/misc/ADE_test_00000272_filtered.png)
 
 ## Source
 [1] Original code: https://github.com/CSAILVision/semantic-segmentation-pytorch.
