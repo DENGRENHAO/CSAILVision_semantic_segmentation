@@ -10,6 +10,8 @@ from torchvision import transforms
 import cv2
 import csv
 from PIL import Image
+if not hasattr(Image, 'Resampling'):  # Pillow<9.0
+    Image.Resampling = Image
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 import urllib.request
@@ -116,6 +118,7 @@ def datapreprocess(image_path,imgSizes,imgMaxSize,padding_constant):
 
     return img_resized_list, segSize
 
+row_lists = []
 
 def visualize_result(image_path, output_path, image_name, pred, names, colors, W_global, H_global):
     img_ori = cv2.imread(image_path+image_name)
@@ -130,6 +133,17 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
     gvi = 0
     svf = 0
     bvf = 0
+    row_dict = {
+        "AudioFile_name": image_name,
+        "GVI": 0.00,
+        "SVF": 0.00,
+        "BVF": 0.00,
+        "grass": 0.00,
+        "tree": 0.00,
+        "field": 0.00,
+        "flower": 0.00,
+        "plant": 0.00,
+    }
     print("Prediction info is:")
     for idx in np.argsort(counts)[::-1]:
         name = names[uniques[idx] + 1]
@@ -138,6 +152,7 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
             print("  {}: {:.2f}%".format(name, ratio))
         if name=='grass' or name=='tree' or name=='field' or name=='flower' or name=='plant':
             gvi += ratio
+            row_dict[name] = ratio
         elif name=='sky':
             svf += ratio
         elif name=='building' or name=='house':
@@ -145,6 +160,10 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
     print(f"GVI: {format(gvi, '.2f')}%")
     print(f"SVF: {format(svf, '.2f')}%")
     print(f"BVF: {format(bvf, '.2f')}%")
+    row_dict["GVI"] = gvi
+    row_dict["SVF"] = svf
+    row_dict["BVF"] = bvf
+    row_lists.append(row_dict)
     data = {'GVI': gvi, 'SVF': svf, 'BVF': bvf}
     df = pd.DataFrame({"key": data.keys(), "value": data.values()})
     img_name = image_name.split(".")
@@ -270,4 +289,8 @@ for image_name in os.listdir(image_path):
     print("Visualization and save......")
     # return original sized prediction discretized class map
     visualize_result(image_path,output_path,image_name,pred,names,colors,W_global,H_global)
-
+path = os.path.join(os.getcwd(), os.path.join(output_path, 'scores'))
+if not os.path.exists(path):
+    os.makedirs(path)
+df = pd.DataFrame(row_lists)
+df.to_csv(os.path.join(path, 'all_scores.csv'), index=False)
