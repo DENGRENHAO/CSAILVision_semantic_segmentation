@@ -1,12 +1,12 @@
 # Semantic Segmentation
-Getting GVI, SVF, BFV scores from semantic segmentation. Using pretrained HRNet on MIT ADE20K dataset, most of the code taken from [CSAILVision](https://github.com/CSAILVision/semantic-segmentation-pytorch) and simple inference implementation from [liuch37](https://github.com/liuch37/semantic-segmentation).
+Getting all 150 classes pixel percentage from semantic segmentation. Using pretrained HRNet on MIT ADE20K dataset, most of the code taken from [CSAILVision](https://github.com/CSAILVision/semantic-segmentation-pytorch) and simple inference implementation from [liuch37](https://github.com/liuch37/semantic-segmentation).
 
 ## Prerequisite
 ```
-git clone https://github.com/DENGRENHAO/semantic-segmentation.git
+git clone https://github.com/DENGRENHAO/CSAILVision_semantic_segmentation.git
 ```
 ```
-cd .\semantic-segmentation\
+cd .\CSAILVision_semantic_segmentation\
 ```
 ```
 pip install -r requirements.txt
