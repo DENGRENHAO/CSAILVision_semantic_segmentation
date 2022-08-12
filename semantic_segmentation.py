@@ -19,16 +19,25 @@ import argparse
 import pandas as pd
 # MIT libraries
 from mit_semseg.models import ModelBuilder, SegmentationModule
-from mit_semseg.utils import colorEncode
+from mit_semseg.utils import colorEncode, unique
 from mit_semseg.lib.utils import as_numpy
 from mit_semseg.lib.nn import async_copy_to
 
+import imgviz
+import PIL.Image
+from json_to_label import json_to_label
+from sklearn.metrics import confusion_matrix
+
 def parse_argument():
-    parser = argparse.ArgumentParser(description='Get GVI, SVF, BVF scores by Semantic Segmentation')
+    parser = argparse.ArgumentParser(description='Get GVI, Sky, Building scores by Semantic Segmentation')
     parser.add_argument('-i', '--input', type=str, required=True,
                         help='Input images directory')
     parser.add_argument('-o', '--output', type=str, required=True,
-                        help='Output images directory')
+                        help='Output results directory')
+    parser.add_argument('-j', '--json', type=str, required=False,
+                        help='Input labeled json file directory')
+    parser.add_argument('-e', '--evaluate', type=bool, default=False,
+                        help='If evaluate model\'s scores')
 
     return parser.parse_args()
 
@@ -118,10 +127,27 @@ def datapreprocess(image_path,imgSizes,imgMaxSize,padding_constant):
 
     return img_resized_list, segSize
 
+def compute_scores(y_pred, y_true):
+    # ytrue, ypred is a flatten vector
+    y_pred = y_pred.flatten()
+    y_true = y_true.flatten()
+    pred_labels = np.unique(y_pred)
+    true_labels = np.unique(y_true)
+    labels = np.union1d(pred_labels, true_labels)
+    current = confusion_matrix(y_true, y_pred, labels=labels)
+    # compute mean iou
+    intersection = np.diag(current)
+    ground_truth_set = current.sum(axis=1)
+    predicted_set = current.sum(axis=0)
+    union = ground_truth_set + predicted_set - intersection
+    IoU = intersection / union.astype(np.float32)
+    pixel_accuracy = np.sum(intersection) / len(y_pred)
+    return np.mean(IoU), pixel_accuracy
+
 row_lists = []
 
-def visualize_result(image_path, output_path, image_name, pred, names, colors, W_global, H_global):
-    img_ori = cv2.imread(image_path+image_name)
+def visualize_result(image_path, output_path, image_name, pred, names, colors, W_global, H_global, json_path, evaluate=False):
+    img_ori = cv2.imread(os.path.join(image_path, image_name))
     img_ori = cv2.cvtColor(img_ori, cv2.COLOR_BGR2RGB)
     if img_ori.shape[0] > 2048 or img_ori.shape[1] > 2048:
         img_ori = cv2.resize(img_ori,(2048,2048))
@@ -131,16 +157,15 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
     pixs = pred.size
     uniques, counts = np.unique(pred, return_counts=True)
     gvi = 0
-    svf = 0
-    bvf = 0
+    sky = 0
+    building = 0
     row_dict = {
         "AudioFile_name": image_name,
         "GVI": 0.00,
-        "SVF": 0.00,
-        "BVF": 0.00,
+        "sky": 0.00,
+        "building": 0.00,
         "grass": 0.00,
         "tree": 0.00,
-        "field": 0.00,
         "flower": 0.00,
         "plant": 0.00,
     }
@@ -150,28 +175,13 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
         ratio = counts[idx] / pixs * 100
         if ratio > 0.1:
             print("  {}: {:.2f}%".format(name, ratio))
-        if name=='grass' or name=='tree' or name=='field' or name=='flower' or name=='plant':
+        if name=='grass' or name=='tree' or name=='flower' or name=='plant':
             gvi += ratio
             row_dict[name] = ratio
         elif name=='sky':
-            svf += ratio
+            sky += ratio
         elif name=='building' or name=='house':
-            bvf += ratio
-    print(f"GVI: {format(gvi, '.2f')}%")
-    print(f"SVF: {format(svf, '.2f')}%")
-    print(f"BVF: {format(bvf, '.2f')}%")
-    row_dict["GVI"] = gvi
-    row_dict["SVF"] = svf
-    row_dict["BVF"] = bvf
-    row_lists.append(row_dict)
-    data = {'GVI': gvi, 'SVF': svf, 'BVF': bvf}
-    df = pd.DataFrame({"key": data.keys(), "value": data.values()})
-    img_name = image_name.split(".")
-    path = os.path.join(os.getcwd(), os.path.join(output_path, 'scores'))
-    if not os.path.exists(path):
-        os.makedirs(path)
-    df.to_csv(os.path.join(path, 'scores_of_' + img_name[0] + '.csv'), index=False)
-
+            building += ratio
     # colorize prediction
     pred_color = colorEncode(pred, colors).astype(np.uint8)
 
@@ -182,16 +192,61 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
 
     # show original images and semantics together
     im_vis = np.concatenate((img_ori, pred_color), axis=1)
-    plt.imsave(output_path+image_name[:-4]+'.png',im_vis)
+    plt.imsave(os.path.join(output_path+image_name[:-4]+'.png'),im_vis)
 
-    return
-
-    # masking:
-    img_ori[mask == 1] = np.array([0,10,255],dtype='uint8') # (R,G,B) = sky blue
-
-    # save masked image:
-    plt.imsave(output_path+image_name[:-4]+'_filtered.png',img_ori)
-
+    if evaluate:
+        label_names = ['_background_', 'tree', 'grass', 'plant', 'flower', 'sky', 'building']
+        labelmap = pred
+        for i in range(labelmap.shape[0]):
+            for j in range(labelmap.shape[1]):
+                if labelmap[i][j] != 4 and labelmap[i][j] != 9 and labelmap[i][j] != 17 and labelmap[i][j] != 66 and \
+                        labelmap[i][j] != 2 and labelmap[i][j] != 1:
+                    labelmap[i][j] = 0
+                elif labelmap[i][j] == 1:
+                    labelmap[i][j] = 6
+                elif labelmap[i][j] == 4:
+                    labelmap[i][j] = 1
+                elif labelmap[i][j] == 2:
+                    labelmap[i][j] = 5
+                elif labelmap[i][j] == 66:
+                    labelmap[i][j] = 4
+                elif labelmap[i][j] == 17:
+                    labelmap[i][j] = 3
+                elif labelmap[i][j] == 9:
+                    labelmap[i][j] = 2
+        colormap = np.array([[0, 0, 0], colors[4], colors[9], colors[17], colors[66], colors[2], colors[7]])
+        lbl_viz = imgviz.label2rgb(
+            labelmap, imgviz.asgray(img_ori), label_names=label_names, font_size=20, colormap=colormap, loc="rb"
+        )
+        PIL.Image.fromarray(lbl_viz).save(os.path.join(output_path, image_name[:-4] + "_inference_label.png"))
+        real_label = json_to_label(os.path.join(json_path, image_name[:-4] + ".json"), colormap, output_path)
+        miou, pixel_accuracy = compute_scores(labelmap, real_label)
+        row_dict["pixel_accuracy"] = pixel_accuracy
+        row_dict["mIoU"] = miou
+        values, counts = np.unique(real_label, return_counts=True)
+        real_gvi = 0
+        real_sky = 0
+        real_building = 0
+        for v, c in zip(values, counts):
+            if v >= 1 and v <= 4:
+                real_gvi += c
+            elif v==5:
+                real_sky += c
+            elif v==6:
+                real_building += c
+        row_dict["real_GVI"] = real_gvi / real_label.size * 100
+        row_dict["real_sky"] = real_sky / real_label.size * 100
+        row_dict["real_building"] = real_building / real_label.size * 100
+    row_dict["GVI"] = gvi
+    row_dict["sky"] = sky
+    row_dict["building"] = building
+    row_lists.append(row_dict)
+    # df = pd.DataFrame({"key": row_dict.keys(), "value": row_dict.values()})
+    # img_name = image_name.split(".")
+    # path = os.path.join(os.getcwd(), os.path.join(output_path, 'scores'))
+    # if not os.path.exists(path):
+    #     os.makedirs(path)
+    # df.to_csv(os.path.join(path, 'scores_of_' + img_name[0] + '.csv'), index=False)
     return
 
 # arguments for model HRNETV2:
@@ -219,11 +274,17 @@ if not os.path.isfile(decoder_weights_path):
 
 image_path = ''
 output_path = ''
+json_path = ''
+evaluate = False
 args = parse_argument()
 if args.input:
     image_path = args.input
 if args.output:
     output_path = args.output
+if args.json:
+    json_path = args.json
+if args.evaluate:
+    evaluate = args.evaluate
 
 # read color table:
 colors = loadmat('./data/color150.mat')['colors']
@@ -258,13 +319,13 @@ segmentation_module.eval()
 for image_name in os.listdir(image_path):
     
     # record the global image size:
-    img = Image.open(image_path+image_name).convert('RGB')
+    img = Image.open(os.path.join(image_path, image_name)).convert('RGB')
     W_global, H_global = img.size
     del img
 
     # read image and process:
     print("Read image {} and preprocessing......".format(image_name))
-    img_resized_list, segSize = datapreprocess(image_path+image_name,imgSizes,imgMaxSize,padding_constant)
+    img_resized_list, segSize = datapreprocess(os.path.join(image_path, image_name),imgSizes,imgMaxSize,padding_constant)
 
     # inference:
     print("Inference starts......")
@@ -288,9 +349,13 @@ for image_name in os.listdir(image_path):
     # visualize and save:
     print("Visualization and save......")
     # return original sized prediction discretized class map
-    visualize_result(image_path,output_path,image_name,pred,names,colors,W_global,H_global)
+    visualize_result(image_path,output_path,image_name,pred,names,colors,W_global,H_global,json_path,evaluate=evaluate)
 path = os.path.join(os.getcwd(), os.path.join(output_path, 'scores'))
 if not os.path.exists(path):
     os.makedirs(path)
+avg_pixel_accuracy = sum(row_dict["pixel_accuracy"] for row_dict in row_lists) / len(row_lists)
+avg_miou = sum(row_dict["mIoU"] for row_dict in row_lists) / len(row_lists)
+row_lists[0]["avg_pixel_accuracy"] = avg_pixel_accuracy
+row_lists[0]["avg_mIoU"] = avg_miou
 df = pd.DataFrame(row_lists)
 df.to_csv(os.path.join(path, 'all_scores.csv'), index=False)
