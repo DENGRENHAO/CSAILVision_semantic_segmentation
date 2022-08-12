@@ -23,10 +23,6 @@ from mit_semseg.utils import colorEncode, unique
 from mit_semseg.lib.utils import as_numpy
 from mit_semseg.lib.nn import async_copy_to
 
-import imgviz
-import PIL.Image
-from sklearn.metrics import confusion_matrix
-
 def parse_argument():
     parser = argparse.ArgumentParser(description='Get GVI, Sky, Building scores by Semantic Segmentation')
     parser.add_argument('-i', '--input', type=str, required=True,
