@@ -162,7 +162,8 @@ def visualize_result(image_path, output_path, image_name, pred, names, colors, W
 
     # show original images and semantics together
     im_vis = np.concatenate((img_ori, pred_color), axis=1)
-    plt.imsave(os.path.join(output_path+image_name[:-4]+'.png'),im_vis)
+    plt.imsave(os.path.join(output_path+image_name[:-4]+'_concat.png'),im_vis)
+    plt.imsave(os.path.join(output_path + image_name[:-4] + '_pred.png'), pred_color)
 
     row_lists.append(row_dict)
     return
